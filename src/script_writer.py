@@ -3,6 +3,22 @@ from dataclasses import dataclass, field
 
 from src.llm_client import LLMClient
 
+# 正则模式：匹配"第X集"格式的集数标题（阿拉伯数字）
+_EPISODE_PATTERN = re.compile(r'^第(\d+)集')
+# 正则模式：匹配集数决策输出中的总集数
+_EPISODE_COUNT_PATTERN = re.compile(r'【集数：(\d+)集】')
+# 章节标题正则：支持"第X章/节/回/卷/篇"
+_CHAPTER_PATTERN = re.compile(r'^(第[零一二三四五六七八九十百千万\d]+[章节回卷篇])\s*(.*)', re.MULTILINE)
+
+# 剧本格式规则（多处提示词共用）
+_FORMAT_RULES = """## 剧本格式规范
+1. 集数标注："第X集"开头
+2. 场景格式："1-1 日 内 九重天"（编号-子编号 日/夜 内/外 地点）
+3. 动作描述：使用 △ 符号开头标注除对话外的内容
+4. 语气神态：使用 () 括号描写人物说话时的语气、神态、动作
+5. 内心独白：使用 VO 或 OS 标记
+6. 回忆镜头：开始用【闪回】，结束用【闪出】"""
+
 
 @dataclass(frozen=True)
 class BatchRange:
@@ -16,7 +32,6 @@ class AutoPromptContext:
     """自动集数提示词构建的上下文配置"""
     template_content: str
     total_episodes: int
-    outline_response: str = ""
     outline_dict: dict[int, str] = field(default_factory=dict)
     novel_segments: dict[int, str] = field(default_factory=dict)
 
@@ -44,8 +59,9 @@ class ScriptWriter:
         self.llm_client = llm_client
         self.template_path = template_path
 
-    def _print_system_prompt(self, prompt: str, separator: str = "-" * 40) -> None:
-        print(f"\n系统提示词 (System Prompt):")
+    @staticmethod
+    def _print_system_prompt(prompt: str, separator: str = "-" * 40) -> None:
+        print(f"\n系统提示词 (System Prompt)")
         print(separator)
         print(prompt)
         print(separator + "\n")
@@ -99,12 +115,7 @@ class ScriptWriter:
         """
         system_prompt = f"""你是一个专业的短剧剧本改编专家。请严格按照以下格式规范将小说改编为短剧剧本：
 
-1. 集数标注：使用"第X集"或"第一集"开头
-2. 场景格式："1-1 日 内 九重天"（编号-子编号 日/夜 内/外 地点）
-3. 动作描述：使用 △ 符号开头标注除对话外的内容
-4. 语气神态：使用 () 括号描写人物说话时的语气、神态、动作
-5. 内心独白：使用 VO 或 OS 标记
-6. 回忆镜头：开始用【闪回】，结束用【闪出】
+{_FORMAT_RULES}
 
 以下是剧本格式模板：
 {template_content}
@@ -165,7 +176,7 @@ class ScriptWriter:
 
             decide_response = self.llm_client.generate(system_prompt_decide, user_prompt_decide)
 
-            match = re.search(r'【集数：(\d+)集】', decide_response)
+            match = _EPISODE_COUNT_PATTERN.search(decide_response)
             if match:
                 total_episodes = int(match.group(1))
                 print(f"LLM 决策的总集数: {total_episodes} 集")
@@ -190,64 +201,53 @@ class ScriptWriter:
             print(f"阶段三：按大纲分批生成剧本正文（共 {total_episodes} 集，每批 {batch_size} 集）...")
             print("=" * 80)
 
-            # 解析大纲一次，构建 {集数: 大纲文本} 映射
             outline_dict = self._parse_outline(outline_response)
-
-            # 将小说分段，每集映射到对应片段
             chapters = self._split_novel_by_chapters(novel_text)
             novel_segments = self._map_episodes_to_segments(chapters, total_episodes)
 
-            # 构建不变的上下文
             ctx = AutoPromptContext(
                 template_content=template_content,
                 total_episodes=total_episodes,
-                outline_response=outline_response,
                 outline_dict=outline_dict,
                 novel_segments=novel_segments,
             )
 
             current_episode = 1
             first_batch = True
+            all_parts: list[str] = []
 
-            while current_episode <= total_episodes:
-                end_episode = min(current_episode + batch_size - 1, total_episodes)
-                print(f"\n生成第 {current_episode} - {end_episode} 集...")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(f"【集数：{total_episodes}集】\n\n")
 
-                batch = BatchRange(start=current_episode, end=end_episode)
+                while current_episode <= total_episodes:
+                    end_episode = min(current_episode + batch_size - 1, total_episodes)
+                    print(f"\n生成第 {current_episode} - {end_episode} 集...")
 
-                # 从预解析的字典中查找大纲
-                batch_outline = self._get_outline_range(outline_dict, current_episode, end_episode)
+                    batch = BatchRange(start=current_episode, end=end_episode)
+                    batch_outline = self._get_outline_range(outline_dict, current_episode, end_episode)
+                    batch_segment = '\n\n'.join(
+                        novel_segments[ep] for ep in range(current_episode, end_episode + 1) if ep in novel_segments
+                    )
 
-                # 合并当前批次对应的小说片段
-                batch_segment = '\n\n'.join(
-                    novel_segments[ep] for ep in range(current_episode, end_episode + 1) if ep in novel_segments
-                )
+                    system_prompt, user_prompt = self._build_auto_prompt(
+                        batch, batch_outline, batch_segment, ctx
+                    )
 
-                system_prompt, user_prompt = self._build_auto_prompt(
-                    batch, batch_outline, batch_segment, ctx
-                )
+                    self._print_system_prompt(system_prompt)
 
-                self._print_system_prompt(system_prompt)
+                    batch_content = self.llm_client.generate(system_prompt, user_prompt)
 
-                batch_content = self.llm_client.generate(system_prompt, user_prompt)
+                    if first_batch and batch_content.startswith("【集数："):
+                        _, _, batch_content = batch_content.partition("\n")
+                        batch_content = batch_content.lstrip()
 
-                # 去掉集数声明（只保留一次）
-                if first_batch and batch_content.startswith("【集数："):
-                    first_newline = batch_content.find("\n")
-                    if first_newline != -1:
-                        batch_content = batch_content[first_newline + 1:].lstrip()
-
-                # 逐批写入文件，避免在内存中累积
-                with open(output_path, 'w' if first_batch else 'a', encoding='utf-8') as f:
-                    if first_batch:
-                        f.write(f"【集数：{total_episodes}集】\n\n")
                     f.write(batch_content + "\n\n")
+                    all_parts.append(batch_content)
 
-                first_batch = False
-                current_episode = end_episode + 1
+                    first_batch = False
+                    current_episode = end_episode + 1
 
-            with open(output_path, 'r', encoding='utf-8') as f:
-                return f.read()
+            return f"【集数：{total_episodes}集】\n\n" + '\n\n'.join(all_parts)
         except Exception as e:
             raise ScriptGenerationError(f"剧本生成失败: {str(e)}") from e
 
@@ -308,7 +308,7 @@ class ScriptWriter:
         result = {}
         current_ep = None
         for line in outline_response.split('\n'):
-            ep_match = re.match(r'^第(\d+)集', line.strip())
+            ep_match = _EPISODE_PATTERN.match(line.strip())
             if ep_match:
                 current_ep = int(ep_match.group(1))
                 result[current_ep] = []
@@ -339,8 +339,7 @@ class ScriptWriter:
         将小说按章节标题分割为 (章节标题, 章节内容) 列表。
         若无章节结构则回退为按段落（空行）分割。
         """
-        chapter_pattern = re.compile(r'^(第[零一二三四五六七八九十百千万\d]+[章节回卷篇])\s*(.*)', re.MULTILINE)
-        matches = list(chapter_pattern.finditer(novel_text))
+        matches = list(_CHAPTER_PATTERN.finditer(novel_text))
 
         if not matches:
             # 回退：按空行分割为段落块
@@ -360,7 +359,6 @@ class ScriptWriter:
     def _map_episodes_to_segments(self, chapters: list[tuple[str, str]], total_episodes: int) -> dict[int, str]:
         """
         将每集映射到对应的小说片段，按集数比例均匀分配。
-        每集对应一个章节范围，相邻集共享章节保证连续性。
         """
         result = {}
         if not chapters:
@@ -373,15 +371,6 @@ class ScriptWriter:
             # 每集只取当前章，不重叠
             result[ep] = chapters[chapter_idx][1]
         return result
-
-    def _extract_novel_segment_range(self, chapters: list[tuple[str, str]], start_chapter: int, end_chapter: int) -> str:
-        """
-        从章节列表中提取指定范围的文本。
-        """
-        start_idx = max(0, start_chapter - 1)
-        end_idx = min(len(chapters), end_chapter)
-        parts = [chapters[i][1] for i in range(start_idx, end_idx)]
-        return '\n\n'.join(parts)
 
     def _build_decide_episodes_prompt(self, novel_text: str, min_episodes: int, max_episodes: int) -> tuple[str, str]:
         """
@@ -426,32 +415,17 @@ class ScriptWriter:
 """
         return system_prompt, user_prompt
 
-    def _build_auto_prompt(self, *args, **kwargs) -> tuple[str, str]:
-        """
-        构建自动集数判断的提示词。
-
-        新签名（推荐）：
-            _build_auto_prompt(batch: BatchRange, outline_section: str, novel_segment: str, ctx: AutoPromptContext)
-
-        向后兼容旧签名：
-            _build_auto_prompt(novel_text, template_content, min_ep, max_ep, start, end, total, outline_section=...)
-        """
-        if args and isinstance(args[0], BatchRange):
-            return self._build_auto_prompt_new(*args, **kwargs)
-        else:
-            return self._build_auto_prompt_legacy(*args, **kwargs)
-
-    def _build_auto_prompt_new(self, batch: BatchRange,
-                                outline_section: str = "",
-                                novel_segment: str = "",
-                                ctx: AutoPromptContext = None) -> tuple[str, str]:
+    def _build_auto_prompt(self, batch: BatchRange,
+                           outline_section: str,
+                           novel_segment: str,
+                           ctx: AutoPromptContext) -> tuple[str, str]:
 
         outline_text = f"""
 ## 本批逐集大纲（严格遵循）
 {outline_section}
 """ if outline_section else ""
 
-        is_last_batch = batch.end >= ctx.total_episodes - 5 if ctx else False
+        is_last_batch = batch.end >= ctx.total_episodes - 5
         last_batch_note = "" if is_last_batch else "（除非本批是最后 5 集）"
 
         system_prompt = f"""你是一位经验丰富的竖屏短剧剧本创作总监。
@@ -468,13 +442,7 @@ class ScriptWriter:
 - **严禁在本批写出结局、全剧终、最终对决或主角彻底离开的场景**{last_batch_note}
 - 严格按照上方提供的「本批逐集大纲」写作，不要跳过大纲中的集数
 
-## 剧本格式规范
-1. 集数标注："第X集"开头
-2. 场景格式："1-1 日 内 九重天"（编号-子编号 日/夜 内/外 地点）
-3. 动作描述：使用 △ 符号开头标注除对话外的内容
-4. 语气神态：使用 () 括号描写人物说话时的语气、神态、动作
-5. 内心独白：使用 VO 或 OS 标记
-6. 回忆镜头：开始用【闪回】，结束用【闪出】
+{_FORMAT_RULES}
 7. 每集结尾用【卡点】标记悬念
 
 {outline_text}
@@ -499,19 +467,4 @@ class ScriptWriter:
 """
 
         return system_prompt, user_prompt
-
-    def _build_auto_prompt_legacy(self, novel_text: str, template_content: str,
-                                   min_episodes: int, max_episodes: int,
-                                   start_episode: int = 1, end_episode: int = None,
-                                   total_episodes: int = None,
-                                   outline_section: str = None) -> tuple[str, str]:
-        """旧签名兼容层，将旧参数转换为新签名调用"""
-        if end_episode is None:
-            end_episode = max_episodes
-        if total_episodes is None:
-            total_episodes = max_episodes
-
-        batch = BatchRange(start=start_episode, end=end_episode)
-        ctx = AutoPromptContext(template_content=template_content, total_episodes=total_episodes)
-        return self._build_auto_prompt_new(batch, outline_section or "", novel_text, ctx)
 

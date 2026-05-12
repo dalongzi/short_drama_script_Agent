@@ -62,12 +62,12 @@ def test_script_writer_build_auto_prompt():
     mock_client = MagicMock(spec=LLMClient)
     writer = ScriptWriter(mock_client, "data/短剧剧本写作格式模板.md")
 
-    novel_text = "小说内容"
-    template_content = "模板内容"
-    system_prompt, user_prompt = writer._build_auto_prompt(novel_text, template_content, 60, 100, 1, 10, 68)
+    ctx = AutoPromptContext(template_content="模板内容", total_episodes=68)
+    batch = BatchRange(start=1, end=10)
+    system_prompt, user_prompt = writer._build_auto_prompt(batch, "", "小说内容", ctx)
 
     assert "第 1 集到第 10 集" in user_prompt
-    assert novel_text in user_prompt
+    assert "小说内容" in user_prompt
     assert "竖屏" in system_prompt
     assert "卡点" in system_prompt
     assert "200-500" in system_prompt
@@ -78,12 +78,10 @@ def test_script_writer_build_auto_prompt_with_outline():
     mock_client = MagicMock(spec=LLMClient)
     writer = ScriptWriter(mock_client, "data/短剧剧本写作格式模板.md")
 
-    novel_text = "小说内容"
-    template_content = "模板内容"
+    ctx = AutoPromptContext(template_content="模板内容", total_episodes=68)
+    batch = BatchRange(start=1, end=10)
     outline = "第一集：\n  核心剧情：女主被陷害\n  结尾钩子：神秘人出现\n"
-    system_prompt, user_prompt = writer._build_auto_prompt(
-        novel_text, template_content, 60, 100, 1, 10, 68, outline_section=outline
-    )
+    system_prompt, user_prompt = writer._build_auto_prompt(batch, outline, "小说内容", ctx)
 
     assert outline in system_prompt
     assert "严格遵循" in system_prompt
@@ -208,7 +206,6 @@ def test_auto_prompt_context_defaults():
         template_content="模板",
         total_episodes=68,
     )
-    assert ctx.outline_response == ""
     assert ctx.outline_dict == {}
     assert ctx.novel_segments == {}
 
@@ -267,18 +264,6 @@ def test_map_episodes_to_segments():
     assert len(segments) == 8
     assert "内容1" in segments[1]
     assert "内容4" in segments[8]
-
-
-def test_extract_novel_segment_range():
-    """测试指定章节范围的提取"""
-    mock_client = MagicMock(spec=LLMClient)
-    writer = ScriptWriter(mock_client, "data/短剧剧本写作格式模板.md")
-
-    chapters = [("第一章", "内容A"), ("第二章", "内容B"), ("第三章", "内容C")]
-    result = writer._extract_novel_segment_range(chapters, start_chapter=1, end_chapter=2)
-    assert "内容A" in result
-    assert "内容B" in result
-    assert "内容C" not in result
 
 
 # ===== Step 4: 精简 _build_auto_prompt 签名 =====

@@ -12,12 +12,12 @@
 | 配置管理 | `src/config.py` | ✅ 通过 |
 | LLM 客户端 | `src/llm_client.py` | ✅ 通过 |
 | 小说读取 | `src/novel_reader.py` | ✅ 通过（支持多编码） |
-| 剧本生成 | `src/script_writer.py` | ✅ 通过（三阶段流程） |
+| 剧本生成 | `src/script_writer.py` | ✅ 通过（三阶段流程 + 精简参数 + 小说分段） |
 | 格式校验 | `src/format_validator.py` | ✅ 通过 |
 | 主入口 | `src/main.py` | ✅ 通过 |
 
 ### 1.2 测试覆盖
-- **测试数量**：29 个测试用例全部通过 ✅
+- **测试数量**：42 个测试用例全部通过 ✅
 - **测试文件**：`tests/test_config.py`、`tests/test_llm_client.py`、`tests/test_novel_reader.py`、`tests/test_script_writer.py`、`tests/test_format_validator.py`
 
 ### 1.3 配置验证
@@ -29,8 +29,10 @@
 - ✅ LLM 自主判断集数功能（60-100集）
 - ✅ 三阶段生成机制：决定集数 → 生成逐集大纲 → 按大纲分批生成正文
 - ✅ 竖屏短剧节奏约束写入提示词（单集1-3分钟、200-500字、每集必有【卡点】）
-- ✅ 系统提示词打印功能（三个阶段均打印）
-- ✅ 字数校验已取消
+- ✅ 系统提示词打印功能（三个阶段均打印，统一辅助方法）
+- ✅ 小说分段传递：阶段三每批仅传递对应章节片段，而非全文
+- ✅ 逐批写入文件：避免内存中累积全部内容
+- ✅ `_build_auto_prompt` 精简参数（8→4）+ 旧签名向后兼容
 
 ---
 
@@ -39,16 +41,16 @@
 ### 2.1 代码改动
 | 文件 | 改动内容 |
 |------|----------|
-| `src/script_writer.py` | 自动集数模式升级为三阶段流程；新增 `_build_outline_prompt()` 和 `_extract_outline_section()` 方法；`_build_auto_prompt()` 新增 `outline_section` 参数；提示词加入竖屏短剧约束和严禁早期写结局铁律 |
-| `tests/test_script_writer.py` | 新增 3 个测试用例（大纲提示词、带大纲的正文提示词、三阶段流程适配）；29 个测试全部通过 |
+| `src/script_writer.py` | 新增 `BatchRange` / `AutoPromptContext` dataclass；新增 `_split_novel_by_chapters` / `_map_episodes_to_segments` / `_extract_novel_segment_range` 分段方法；新增 `_parse_outline` / `_get_outline_range` 大纲解析方法；`_build_auto_prompt` 重构为双签名（新签名 4 参数 + 旧签名兼容层）；`_build_outline_prompt` 新增"原文范围"标注要求；`_print_system_prompt` 统一辅助方法消除 4 处重复；`import re` 移至模块级；删除死代码默认值；阶段三使用片段替代全文传递；逐批追加写入文件 |
+| `tests/test_script_writer.py` | 新增 13 个测试用例（dataclass、分段提取、新签名、集成测试）；42 个测试全部通过 |
+| `.gitignore` | 添加 `.claude/` 忽略规则 |
 
 ### 2.2 文档更新
 | 文件 | 新增/更新 |
 |------|----------|
-| `CLAUDE.md` | 新创建，替代 AGENTS.md 作为项目主导航文档 |
-| `docs/auto-episode-spec.md` | 同步三阶段流程和竖屏短剧约束 |
-| `.gitignore` | 添加 `.claude/` 忽略规则 |
-| `AGENTS.md` | 已合并到 CLAUDE.md，已删除 |
+| `docs/refactor-auto-prompt-spec.md` | 新创建，重构 SPEC 文档（问题分析、解决方案、测试策略、5 步实施计划） |
+| `CLAUDE.md` | 项目主导航 |
+| `docs/auto-episode-spec.md` | 自动集数三阶段流程设计 |
 
 ---
 
@@ -60,7 +62,12 @@
 - **修复**：已引入三阶段流程（大纲先行 → 按大纲分批写正文），理论上可解决
 - **待验证**：需实际运行一次 `--auto-episodes` 验证新流程输出质量
 
-### 3.2 其他
+### 3.2 分段策略限制
+- **现象**：当 `batch_size >= total_episodes` 时（单批生成完所有集），分段合并后仍接近全文
+- **原因**：单批覆盖所有集数时，对应的片段自然覆盖所有章节
+- **缓解**：实际使用中建议 `batch_size < total_episodes / 2`，分段效果更显著
+
+### 3.3 其他
 - `.env` 文件中 `DASHSCOPE_API_KEY` 未配置（需用户手动设置）
 
 ---
@@ -78,10 +85,10 @@ pip install -r requirements.txt
 # 生成指定集数的剧本
 python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data/output.txt --episodes 1
 
-# 自动集数模式（推荐，三阶段流程）
+# 自动集数模式（推荐，三阶段流程 + 分段传递）
 python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data/output.txt --auto-episodes
 
-# 自定义批次大小
+# 自定义批次大小（建议小于总集数的一半）
 python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data/output.txt --auto-episodes --batch-size 15
 ```
 
@@ -103,5 +110,6 @@ python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data
 | `CLAUDE.md` | 项目主导航（命令 + 架构 + 约束） |
 | `docs/ip-short-drama-spec.md` | 项目总体规划与技术规格 |
 | `docs/auto-episode-spec.md` | 自动集数三阶段流程设计 |
+| `docs/refactor-auto-prompt-spec.md` | 参数精简与分段策略重构 SPEC |
 | `docs/session-handoff.md` | 本交接文档 |
 | `data/短剧剧本写作格式模板.md` | 标准剧本格式模板 |

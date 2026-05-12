@@ -161,9 +161,14 @@ class ScriptWriter:
             print(f"阶段二：生成 {total_episodes} 集逐集大纲（每集剧情+钩子）...")
             print("=" * 80)
 
-            outline_response = self.llm_client.generate(
-                *self._build_outline_prompt(novel_text, total_episodes)
-            )
+            system_prompt_outline, user_prompt_outline = self._build_outline_prompt(novel_text, total_episodes)
+
+            print("\n系统提示词 (System Prompt):")
+            print("-" * 40)
+            print(system_prompt_outline)
+            print("-" * 40 + "\n")
+
+            outline_response = self.llm_client.generate(system_prompt_outline, user_prompt_outline)
             print(f"大纲生成完成。")
 
             # ===== 阶段三：按大纲分批生成正文 =====

@@ -2,63 +2,265 @@
     "project": "IP 改编短剧 Agent",
     "last_updated": "2026-05-19",
     "rules": {
-      "single_active_feature": true,
-      "passing_requires_evidence": true,
-      "do_not_skip_verification": true
+        "single_active_feature": true,
+        "passing_requires_evidence": true,
+        "do_not_skip_verification": true
     },
     "status_legend": {
-      "not_started": "功能还没开始做。",
-      "in_progress": "这个功能是当前唯一正在进行的任务。",
-      "blocked": "因为已记录的阻塞问题，当前无法继续推进。",
-      "passing": "要求的验证已经通过，并且证据已经记录。"
+        "not_started": "功能还没开始做。",
+        "in_progress": "这个功能是当前唯一正在进行的任务。",
+        "blocked": "因为已记录的阻塞问题，当前无法继续推进。",
+        "passing": "要求的验证已经通过，并且证据已经记录。"
     },
     "features": [
-      {
-        "id": "chat-001",
-        "priority": 1,
-        "area": "chat",
-        "title": "创建新会话",
-        "user_visible_behavior": "用户点击 New Chat 后，可以看到一个新的空白对话。",
-        "status": "not_started",
-        "verification": [
-          "打开应用。",
-          "点击 New Chat。",
-          "确认侧边栏出现一个新会话。",
-          "确认主面板显示空白对话状态。"
-        ],
-        "evidence": [],
-        "notes": ""
-      },
-      {
-        "id": "chat-002",
-        "priority": 2,
-        "area": "chat",
-        "title": "在当前会话里发送消息",
-        "user_visible_behavior": "用户提交一条消息后，可以在当前线程中看到它。",
-        "status": "not_started",
-        "verification": [
-          "打开一个已有会话。",
-          "在输入框中输入消息。",
-          "提交消息。",
-          "确认线程中出现这条新消息。"
-        ],
-        "evidence": [],
-        "notes": ""
-      },
-      {
-        "id": "chat-003",
-        "priority": 3,
-        "area": "chat",
-        "title": "持久化保存会话列表",
-        "user_visible_behavior": "应用重启后，用户仍能看到之前创建的会话。",
-        "status": "not_started",
-        "verification": [
-          "创建两个会话。",
-          "重启应用。",
-          "确认两个会话仍显示在侧边栏中。"
-        ],
-        "evidence": [],
-        "notes": ""
-      }
+        {
+            "id": "v2-001",
+            "priority": 1,
+            "area": "script_generation",
+            "title": "新增 V2 数据结构：EpisodeOutline / StageOneResult / BatchSegment",
+            "user_visible_behavior": "无直接用户可见行为，为后续阶段一/二提供结构化数据载体。",
+            "status": "passing",
+            "verification": [
+                "script_writer.py 中新增 EpisodeOutline dataclass（episode, line_range, original_range, core_plot, ending_hook）。",
+                "新增 StageOneResult dataclass（total_episodes, outlines）。",
+                "新增 BatchSegment dataclass（batch_start, batch_end, line_start, line_end, novel_excerpt）。",
+                "新增 LineRange dataclass（start, end）。",
+                "导入 json 模块。"
+            ],
+            "evidence": [
+                "script_writer.py 第1行新增 import json",
+                "第43-74行新增 LineRange/EpisodeOutline/StageOneResult/BatchSegment 四个 frozen dataclass"
+            ],
+            "notes": "SPEC 第 2.4 节和第 3.2 节。"
+        },
+        {
+            "id": "v2-002",
+            "priority": 2,
+            "area": "script_generation",
+            "title": "阶段一：_build_combined_prompt() 合并提示词",
+            "user_visible_behavior": "自动集数模式下，阶段一 LLM 调用使用新的合并提示词（集数 + 大纲 + 行号），要求输出严格 JSON。",
+            "status": "passing",
+            "verification": [
+                "新增 _build_combined_prompt(novel_text, novel_lines_count, min_episodes, max_episodes) 方法。",
+                "system_prompt 包含竖屏短剧特征、剧情分配铁律、JSON Schema 约束。",
+                "user_prompt 包含小说全文，要求输出 {total_episodes, outlines[]}。",
+                "每集 outline 字段包含 line_range{start,end}, original_range, core_plot, ending_hook。",
+                "提示词中约束每集大纲 core_plot ≤ 40 字。"
+            ],
+            "evidence": [
+                "script_writer.py 第482-546行新增 _build_combined_prompt 方法"
+            ],
+            "notes": "SPEC 第 2.2-2.3 节。"
+        },
+        {
+            "id": "v2-003",
+            "priority": 3,
+            "area": "script_generation",
+            "title": "阶段一：_parse_combined_response() 解析 JSON",
+            "user_visible_behavior": "阶段一 LLM 响应被解析为 StageOneResult 对象，解析失败返回 None。",
+            "status": "passing",
+            "verification": [
+                "方法接收 str 响应，返回 StageOneResult 或 None。",
+                "json.loads 解析成功 → 构建 StageOneResult。",
+                "JSON 格式错误 → 返回 None 并记录日志。",
+                "缺失必填字段（total_episodes / outlines / episode / core_plot 等）→ 返回 None。",
+                "line_range 嵌套 dict 缺失 start/end → 返回 None。"
+            ],
+            "evidence": [
+                "script_writer.py 第548-652行新增 _parse_combined_response 静态方法，17个测试用例全部通过"
+            ],
+            "notes": "SPEC 第 2.4 节验证规则 1。"
+        },
+        {
+            "id": "v2-004",
+            "priority": 4,
+            "area": "script_generation",
+            "title": "阶段一：_validate_outlines() 验证大纲完整性",
+            "user_visible_behavior": "解析后的 StageOneResult 通过验证才进入阶段二，验证失败返回失败原因字符串。",
+            "status": "passing",
+            "verification": [
+                "验证 total_episodes 在 [min_episodes, max_episodes] 范围内。",
+                "验证 len(outlines) == total_episodes。",
+                "验证 episode 字段为 1..N 连续整数。",
+                "验证每集 line_range.start/end 在 [1, novel_lines_count] 范围内。",
+                "验证相邻集行号连续（第 i 集 start == 第 i-1 集 end + 1）。",
+                "验证通过返回 None，失败返回具体失败原因字符串。"
+            ],
+            "evidence": [
+                "script_writer.py 第651-700行新增 _validate_outlines 静态方法，5个验证分支+1个通过测试全部通过"
+            ],
+            "notes": "SPEC 第 2.4 节验证规则 2-4。"
+        },
+        {
+            "id": "v2-005",
+            "priority": 5,
+            "area": "script_generation",
+            "title": "阶段二：_aggregate_batches() 按 batch_size + redundancy 聚合",
+            "user_visible_behavior": "阶段二将 N 集大纲聚合为若干批次，每批 10 集，前后各带 2 集冗余。",
+            "status": "passing",
+            "verification": [
+                "方法签名 _aggregate_batches(outlines, batch_size=10, redundancy=2)。",
+                "输出 list[BatchRange]（start, end, pre_start, post_end）。",
+                "第一批无前冗余（pre_start = None）。",
+                "最后一批无后冗余（post_end = None）。",
+                "总集数 <= batch_size 时返回单批，无冗余。",
+                "80 集 → 8 批：1-10/11-20/.../71-80。"
+            ],
+            "evidence": [
+                "BatchRange 扩展 pre_start/post_end 字段；_aggregate_batches 方法实现，测试通过"
+            ],
+            "notes": "SPEC 第 3.2 节和第 4.1 节。输出用 BatchRange 扩展版，包含冗余范围。"
+        },
+        {
+            "id": "v2-006",
+            "priority": 6,
+            "area": "script_generation",
+            "title": "阶段二：_extract_batch_text() 根据行号区间提取原文",
+            "user_visible_behavior": "根据 LLM 标注的行号区间从小说原文中提取对应文本，供阶段三使用。",
+            "status": "passing",
+            "verification": [
+                "方法签名 _extract_batch_text(novel_lines, outlines, batch_range)。",
+                "根据 line_range.start/end 从 novel_lines 切片提取。",
+                "包含前冗余、本批、后冗余三部分，分别标注。",
+                "行号越界时截断到有效范围并记录日志。",
+                "返回 (pre_text, main_text, post_text) 三元组。"
+            ],
+            "evidence": [
+                "script_writer.py 第749-817行新增 _extract_batch_text 静态方法，测试通过"
+            ],
+            "notes": "SPEC 第 3.2 节。novel_lines 为小说按行分割后的列表。"
+        },
+        {
+            "id": "v2-007",
+            "priority": 7,
+            "area": "script_generation",
+            "title": "阶段三：_build_batch_prompt_v2() 分批生成提示词（含冗余标注）",
+            "user_visible_behavior": "阶段三每批生成时，prompt 中包含冗余原文并明确标注'仅供参考，不生成剧本'。",
+            "status": "passing",
+            "verification": [
+                "方法签名 _build_batch_prompt_v2(batch_range, batch_outlines, pre_text, main_text, post_text, ctx)。",
+                "system_prompt 包含竖屏短剧特征、格式规范、本批大纲。",
+                "user_prompt 包含三部分原文：冗余前（标注）、本批原文、冗余后（标注）。",
+                "冗余原文有明确标记如【以下原文仅供上下文参考，不要生成对应剧本】。",
+                "第一批和最后一批的冗余部分自动省略。"
+            ],
+            "evidence": [
+                "script_writer.py 第819-910行新增 _build_batch_prompt_v2 方法，测试通过"
+            ],
+            "notes": "SPEC 第 4.2 节。"
+        },
+        {
+            "id": "v2-008",
+            "priority": 8,
+            "area": "script_generation",
+            "title": "阶段三：修改 generate_script_auto_episodes() 接入 V2 流程",
+            "user_visible_behavior": "自动集数模式使用新的三阶段流程：JSON 大纲 → 规则聚合 → 分批生成（含冗余）。",
+            "status": "passing",
+            "verification": [
+                "阶段一调用 _build_combined_prompt → LLM → _parse_combined_response。",
+                "阶段二调用 _aggregate_batches + _extract_batch_text。",
+                "阶段三循环调用 _build_batch_prompt_v2 → LLM → 写入文件。",
+                "保留旧阶段一/二/三代码，添加 if 分支切换（默认 V2，可通过 flag 切回 V1）。",
+                "输出文件首行包含【集数：N集】标记。"
+            ],
+            "evidence": [
+                "generate_script_auto_episodes 重写为 V2 流程；原实现提取为 _generate_script_auto_episodes_v1；40个测试通过"
+            ],
+            "notes": "SPEC 第 5 节数据流图。入口方法整合三阶段。"
+        },
+        {
+            "id": "v2-009",
+            "priority": 9,
+            "area": "script_generation",
+            "title": "降级路径：阶段一失败自动回退到 V1 流程",
+            "user_visible_behavior": "当阶段一 JSON 解析或行号验证失败时，自动降级使用旧的三次调用 V1 流程，不中断生成。",
+            "status": "passing",
+            "verification": [
+                "_parse_combined_response 返回 None 时，打印降级原因并调用 V1 流程。",
+                "_validate_outlines 返回失败原因时，打印降级原因并调用 V1 流程。",
+                "V1 流程使用旧的 _build_decide_episodes_prompt + _build_outline_prompt + _map_episodes_to_segments。",
+                "降级路径有明确的日志输出（WARNING 级别）。"
+            ],
+            "evidence": [
+                "新增 test_stage_one_json_parse_failure_fallback 和 test_stage_one_outline_count_mismatch_fallback 测试，42个测试通过"
+            ],
+            "notes": "SPEC 第 7.2 节降级路径测试。旧方法保留不删除。"
+        },
+        {
+            "id": "v2-010",
+            "priority": 10,
+            "area": "testing",
+            "title": "测试：阶段一 JSON 解析用例（合法/非法/缺字段）",
+            "user_visible_behavior": "无用户可见行为，确保阶段一解析逻辑的测试覆盖。",
+            "status": "passing",
+            "verification": [
+                "tests/test_script_writer.py 新增 test_parse_combined_response_valid_json。",
+                "新增 test_parse_combined_response_invalid_json（非 JSON 字符串）。",
+                "新增 test_parse_combined_response_missing_fields（缺 total_episodes / outlines）。",
+                "新增 test_parse_combined_response_invalid_line_range（line_range 缺 start/end）。",
+                "所有测试通过 pytest 验证。"
+            ],
+            "evidence": [
+                "补充 3 个 parse 相关测试 + 4 个 validate 测试 + 5 个 aggregate/extract 测试 + 1 个 prompt 测试，共 55 个测试通过"
+            ],
+            "notes": "SPEC 第 7.1 节前 4 个测试用例。"
+        },
+        {
+            "id": "v2-011",
+            "priority": 11,
+            "area": "testing",
+            "title": "测试：阶段一大纲验证用例（集数连续性/行号连续性/范围）",
+            "user_visible_behavior": "无用户可见行为，确保阶段二前置校验的测试覆盖。",
+            "status": "passing",
+            "verification": [
+                "test_validate_outlines_episode_continuity（episode 非连续 → 失败）。",
+                "test_validate_outlines_line_range_continuity（行号不连续 → 失败）。",
+                "test_validate_outlines_count_mismatch（outlines 数量 != total_episodes → 失败）。",
+                "test_validate_outlines_valid（完全合法 → 返回 None）。",
+                "所有测试通过 pytest 验证。"
+            ],
+            "evidence": [
+                "4 个 validate_outlines 测试已添加，55 个测试通过"
+            ],
+            "notes": "SPEC 第 7.1 节验证相关测试。"
+        },
+        {
+            "id": "v2-012",
+            "priority": 12,
+            "area": "testing",
+            "title": "测试：阶段二聚合和原文提取用例",
+            "user_visible_behavior": "无用户可见行为，确保阶段二聚合逻辑的测试覆盖。",
+            "status": "passing",
+            "verification": [
+                "test_aggregate_batches_basic（80 集 → 8 批）。",
+                "test_aggregate_batches_first_batch_no_pre_redundancy（第一批无前冗余）。",
+                "test_aggregate_batches_last_batch_no_post_redundancy（最后一批无后冗余）。",
+                "test_aggregate_episodes_less_than_batch（5 集 → 1 批，无冗余）。",
+                "test_extract_batch_text（行号区间提取正确）。",
+                "所有测试通过 pytest 验证。"
+            ],
+            "evidence": [
+                "5 个 aggregate/extract 测试已添加，55 个测试通过"
+            ],
+            "notes": "SPEC 第 7.1 节聚合相关测试。"
+        },
+        {
+            "id": "v2-013",
+            "priority": 13,
+            "area": "testing",
+            "title": "测试：阶段三提示词和降级路径用例",
+            "user_visible_behavior": "无用户可见行为，确保阶段三和降级路径的测试覆盖。",
+            "status": "passing",
+            "verification": [
+                "test_build_batch_prompt_v2_redundancy_labeling（提示词含冗余标注）。",
+                "test_stage_one_json_parse_failure_fallback（Mock LLM 返回非 JSON → 降级到 V1）。",
+                "test_stage_one_outline_count_mismatch_fallback（outlines 数量不匹配 → 降级）。",
+                "所有测试通过 pytest 验证。"
+            ],
+            "evidence": [
+                "test_build_batch_prompt_v2_redundancy_labeling 已添加，降级路径 2 个测试已有，55 个测试通过"
+            ],
+            "notes": "SPEC 第 7.1-7.2 节剩余测试。"
+        }
     ]
-  }
+}

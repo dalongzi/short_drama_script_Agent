@@ -18,7 +18,7 @@ sys.path.insert(0, ROOT_DIR)
 
 from src.config import Config
 from src.llm_client import LLMClient
-from src.script_writer import ScriptWriter, BatchRange, AutoPromptContext
+from src.script_writer import ScriptWriter, ScriptGenerationError, BatchRange, AutoPromptContext
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
@@ -115,98 +115,76 @@ def generate_script(file_id):
                     'total_tokens': total_tokens['total_tokens'],
                 })
 
-            # ===== 阶段一：决定集数 =====
-            yield _sse({'type': 'chunk', 'text': '', 'progress': 2, 'status': '正在分析小说内容，决定集数...'})
+            # ===== V2 阶段一：LLM 单次调用输出集数 + 逐集大纲（JSON） =====
+            yield _sse({'type': 'chunk', 'text': '', 'progress': 2, 'status': '正在分析小说内容，决定集数并生成大纲...'})
 
             template_content = script_writer._read_template()
-            sys_d, usr_d = script_writer._build_decide_episodes_prompt(novel_text, 60, 100)
-            decide_resp, usage_d = llm_client.generate(sys_d, usr_d)
-            total_tokens['prompt_tokens'] += usage_d['prompt_tokens']
-            total_tokens['completion_tokens'] += usage_d['completion_tokens']
-            total_tokens['total_tokens'] += usage_d['total_tokens']
+            novel_lines = novel_text.split('\n')
+            novel_lines_count = len(novel_lines)
+
+            sys_s1, usr_s1 = script_writer._build_combined_prompt(novel_text, novel_lines_count, 60, 100)
+            stage1_resp, usage_s1 = llm_client.generate(sys_s1, usr_s1)
+            total_tokens['prompt_tokens'] += usage_s1['prompt_tokens']
+            total_tokens['completion_tokens'] += usage_s1['completion_tokens']
+            total_tokens['total_tokens'] += usage_s1['total_tokens']
             yield from _emit_tokens()
 
             yield _sse({
                 'type': 'llm_trace',
-                'stage': '阶段一：决定集数',
-                'system_prompt': sys_d,
-                'user_prompt': usr_d,
-                'response': decide_resp,
+                'stage': '阶段一：集数决策+大纲（JSON）',
+                'system_prompt': sys_s1,
+                'user_prompt': usr_s1,
+                'response': stage1_resp,
             })
 
-            # 解析集数
-            _EPISODE_COUNT_PATTERN = re.compile(r'集数[：:]\s*(\d+)')
-            match = _EPISODE_COUNT_PATTERN.search(decide_resp)
-            total_episodes = int(match.group(1)) if match else 80
+            stage_one = ScriptWriter._parse_combined_response(stage1_resp)
+            if stage_one is None:
+                raise ScriptGenerationError("阶段一 JSON 解析失败")
+
+            validation_error = ScriptWriter._validate_outlines(stage_one, 60, 100, novel_lines_count)
+            if validation_error is not None:
+                raise ScriptGenerationError(f"阶段一大纲验证失败: {validation_error}")
+
+            total_episodes = stage_one.total_episodes
+            outlines = stage_one.outlines
 
             yield _sse({
                 'type': 'chunk',
-                'text': f'【分析完成】LLM 决策的总集数: {total_episodes} 集\n\n',
-                'progress': 5,
-                'status': f'确定集数为 {total_episodes} 集，正在生成大纲...'
-            })
-
-            # ===== 阶段二：生成逐集大纲 =====
-            sys_o, usr_o = script_writer._build_outline_prompt(novel_text, total_episodes)
-            outline_response, usage_o = llm_client.generate(sys_o, usr_o)
-            total_tokens['prompt_tokens'] += usage_o['prompt_tokens']
-            total_tokens['completion_tokens'] += usage_o['completion_tokens']
-            total_tokens['total_tokens'] += usage_o['total_tokens']
-            yield from _emit_tokens()
-
-            yield _sse({
-                'type': 'llm_trace',
-                'stage': '阶段二：生成逐集大纲',
-                'system_prompt': sys_o,
-                'user_prompt': usr_o,
-                'response': outline_response,
-            })
-
-            yield _sse({
-                'type': 'chunk',
-                'text': '【大纲生成完成】\n\n',
+                'text': f'【分析完成】LLM 决策的总集数: {total_episodes} 集\n\n【大纲生成完成】\n\n',
                 'progress': 10,
-                'status': '大纲已生成，正在分批生成剧本正文...'
+                'status': f'确定集数为 {total_episodes} 集，正在分批生成剧本正文...'
             })
 
-            # ===== 阶段三：按大纲分批生成正文 =====
-            outline_dict = script_writer._parse_outline(outline_response)
-            chapters = script_writer._split_novel_by_chapters(novel_text)
-            novel_segments = script_writer._map_episodes_to_segments(chapters, total_episodes)
+            # ===== V2 阶段二：规则聚合批次 =====
+            batch_ranges = ScriptWriter._aggregate_batches(outlines, batch_size=10)
 
-            ctx = AutoPromptContext(
-                template_content=template_content,
-                total_episodes=total_episodes,
-                outline_dict=outline_dict,
-                novel_segments=novel_segments,
-            )
-
-            batch_size = 10
-            current_episode = 1
+            # ===== V2 阶段三：循环分批 LLM 生成 =====
             all_parts = []
 
-            while current_episode <= total_episodes:
+            for batch_range in batch_ranges:
                 if not state['running']:
                     yield _sse({'type': 'chunk', 'text': '\n\n【已停止】', 'progress': 100, 'status': '已停止'})
                     state['running'] = False
                     return
 
-                end_episode = min(current_episode + batch_size - 1, total_episodes)
-
                 yield _sse({
                     'type': 'chunk',
                     'text': '',
-                    'progress': 10 + int((current_episode / total_episodes) * 5),
-                    'status': f'正在生成第 {current_episode} - {end_episode} 集...'
+                    'progress': 10 + int((batch_range.start / total_episodes) * 5),
+                    'status': f'正在生成第 {batch_range.start} - {batch_range.end} 集...'
                 })
 
-                batch = BatchRange(start=current_episode, end=end_episode)
-                batch_outline = script_writer._get_outline_range(outline_dict, current_episode, end_episode)
-                batch_segment = '\n\n'.join(
-                    novel_segments[ep] for ep in range(current_episode, end_episode + 1) if ep in novel_segments
-                )
+                batch_outlines = [o for o in outlines if batch_range.start <= o.episode <= batch_range.end]
+                pre_text, main_text, post_text = ScriptWriter._extract_batch_text(novel_lines, outlines, batch_range)
 
-                sys_p, usr_p = script_writer._build_auto_prompt(batch, batch_outline, batch_segment, ctx)
+                from src.script_writer import AutoPromptContext
+                ctx = AutoPromptContext(
+                    template_content=template_content,
+                    total_episodes=total_episodes,
+                )
+                sys_p, usr_p = script_writer._build_batch_prompt_v2(
+                    batch_range, batch_outlines, pre_text, main_text, post_text, ctx
+                )
 
                 # 流式生成：逐 token 推送给前端
                 batch_content_parts = []
@@ -228,7 +206,7 @@ def generate_script(file_id):
                 # 发送完整的 LLM 调用追踪信息
                 yield _sse({
                     'type': 'llm_trace',
-                    'stage': f'阶段三：生成第 {current_episode}-{end_episode} 集',
+                    'stage': f'阶段三：生成第 {batch_range.start}-{batch_range.end} 集',
                     'system_prompt': sys_p,
                     'user_prompt': usr_p,
                     'response': batch_content,
@@ -240,21 +218,19 @@ def generate_script(file_id):
                 if not is_valid:
                     batch_content += '\n\n【格式校验问题】\n' + '\n'.join(issues)
 
-                progress = 10 + int((end_episode / total_episodes) * 88)
+                progress = 10 + int((batch_range.end / total_episodes) * 88)
                 yield _sse({
                     'type': 'chunk',
-                    'text': f'\n\n【第 {current_episode}-{end_episode} 集生成完成】\n\n',
+                    'text': f'\n\n【第 {batch_range.start}-{batch_range.end} 集生成完成】\n\n',
                     'progress': progress,
-                    'status': f'第 {current_episode}-{end_episode} 集完成，进度 {progress}%'
+                    'status': f'第 {batch_range.start}-{batch_range.end} 集完成，进度 {progress}%'
                 })
 
                 all_parts.append(batch_content)
                 state['progress'] = progress
-                current_episode = end_episode + 1
 
             # 完成
-            full_result = '\n\n'.join(all_parts)
-            full_result = f'【集数：{total_episodes}集】\n\n' + full_result
+            full_result = f'【集数：{total_episodes}集】\n\n' + '\n\n'.join(all_parts)
             state['result'] = full_result
             state['running'] = False
             yield _sse({'type': 'done', 'text': '', 'progress': 100, 'status': '生成完成！'})

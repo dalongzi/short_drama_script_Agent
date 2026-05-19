@@ -1,9 +1,20 @@
 
 import argparse
+import logging
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 配置日志输出到文件
+log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    filename=os.path.join(log_dir, 'script_generation.log'),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
 
 from src.config import Config
 from src.llm_client import LLMClient
@@ -12,8 +23,8 @@ from src.script_writer import ScriptWriter
 from src.format_validator import validate_script_format
 
 
-def main(novel_path: str, output_path: str, num_episodes: int = 1, 
-         auto_episodes: bool = False, min_episodes: int = 60, max_episodes: int = 100):
+def main(novel_path: str, output_path: str, num_episodes: int = 1,
+         auto_episodes: bool = False, min_episodes: int = 40, max_episodes: int = 110):
     """
     主函数
 
@@ -83,8 +94,8 @@ if __name__ == "__main__":
     parser.add_argument("--episodes", type=int, default=1, help="生成的集数（默认1集）")
     parser.add_argument("--auto-episodes", action="store_true", default=False, 
                         help="启用自动集数模式，由LLM根据小说内容自主判断集数")
-    parser.add_argument("--min-episodes", type=int, default=60, help="自动模式下的最小集数（默认60）")
-    parser.add_argument("--max-episodes", type=int, default=100, help="自动模式下的最大集数（默认100）")
+    parser.add_argument("--min-episodes", type=int, default=40, help="自动模式下的最小集数（默认40）")
+    parser.add_argument("--max-episodes", type=int, default=110, help="自动模式下的最大集数（默认110）")
     
     args = parser.parse_args()
     

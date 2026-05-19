@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>短剧剧本改编 Agent - UI 方案对比</title>
+<style>
+  /* ==================== 全局 ==================== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 24px;
+  }
+  h1.page-title {
+    text-align: center;
+    font-size: 24px;
+    margin-bottom: 8px;
+    color: #1a1a2e;
+  }
+  p.page-subtitle {
+    text-align: center;
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 32px;
+  }
+
+  /* 网格布局 */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1200px) {
+    .grid { grid-template-columns: 1fr; max-width: 600px; }
+  }
+
+  /* 方案卡片容器 */
+  .scheme {
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+  }
+  .scheme-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+  }
+  .scheme-header h2 {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .scheme-header .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 6px;
+    font-weight: 500;
+  }
+  .scheme-body {
+    padding: 20px;
+    flex: 1;
+  }
+  .scheme-footer {
+    padding: 12px 20px;
+    border-top: 1px solid #eee;
+    font-size: 12px;
+    color: #888;
+  }
+
+  /* 通用组件模拟 */
+  .drop-zone {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 32px 16px;
+    text-align: center;
+    color: #999;
+    font-size: 14px;
+    transition: border-color .2s;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+  .drop-zone:hover { border-color: #667eea; color: #667eea; }
+  .drop-zone .icon { font-size: 32px; margin-bottom: 8px; }
+
+  .output-area {
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 260px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    color: #333;
+    margin-bottom: 12px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .btn-primary { background: #667eea; color: #fff; }
+  .btn-secondary { background: #e8e8e8; color: #333; }
+  .btn-success { background: #52c41a; color: #fff; }
+  .btn-outline { background: transparent; border: 1px solid #d9d9d9; color: #666; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .progress-bar {
+    height: 4px;
+    background: #eee;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .progress-bar .fill {
+    height: 100%;
+    background: #667eea;
+    border-radius: 2px;
+    transition: width .3s;
+  }
+
+  .status-text {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+
+  .editable {
+    outline: none;
+  }
+  .editable:focus {
+    box-shadow: inset 0 0 0 2px #667eea33;
+  }
+
+  /* ==================== 方案 A: 极简工具风 ==================== */
+  .scheme-a .scheme-header { background: #fafafa; }
+  .scheme-a .tag { background: #f0f0f0; color: #666; }
+  .scheme-a .drop-zone { border-color: #d9d9d9; background: #fff; }
+  .scheme-a .output-area { background: #fff; border-color: #d9d9d9; }
+  .scheme-a .btn-primary { background: #1a1a2e; }
+
+  /* ==================== 方案 B: 专业工作台 ==================== */
+  .scheme-b .scheme-header { background: #1e293b; color: #fff; }
+  .scheme-b .tag { background: #334155; color: #94a3b8; }
+  .scheme-b .drop-zone { border-color: #475569; background: #f8fafc; color: #64748b; }
+  .scheme-b .drop-zone:hover { border-color: #3b82f6; color: #3b82f6; }
+  .scheme-b .output-area { background: #0f172a; color: #e2e8f0; border-color: #1e293b; font-size: 11px; }
+  .scheme-b .btn-primary { background: #3b82f6; }
+  .scheme-b .btn-success { background: #10b981; }
+  .scheme-b .progress-bar .fill { background: #3b82f6; }
+  .scheme-b .status-text { color: #64748b; }
+  .scheme-b .sidebar {
+    background: #f1f5f9;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .scheme-b .sidebar h4 { font-size: 12px; color: #475569; margin-bottom: 6px; }
+  .scheme-b .sidebar .step { padding: 4px 0; color: #64748b; }
+  .scheme-b .sidebar .step.active { color: #3b82f6; font-weight: 600; }
+  .scheme-b .sidebar .step.done { color: #10b981; }
+
+  /* ==================== 方案 C: 现代卡片流 ==================== */
+  .scheme-c .scheme-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; }
+  .scheme-c .tag { background: rgba(255,255,255,0.2); color: #fff; }
+  .scheme-c .drop-zone {
+    border-color: #667eea44;
+    background: linear-gradient(135deg, #667eea08 0%, #764ba208 100%);
+    color: #667eea;
+  }
+  .scheme-c .output-area {
+    background: #fff;
+    border: 1px solid #e8e0f0;
+    box-shadow: 0 1px 3px rgba(102,126,234,0.08);
+  }
+  .scheme-c .btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  .scheme-c .btn-success {
+    background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+  }
+  .scheme-c .progress-bar .fill {
+    background: linear-gradient(90deg, #667eea, #764ba2);
+  }
+  .scheme-c .pipeline {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .scheme-c .pipeline .dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #e8e8e8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #999;
+    flex-shrink: 0;
+  }
+  .scheme-c .pipeline .dot.active { background: #667eea; color: #fff; }
+  .scheme-c .pipeline .dot.done { background: #52c41a; color: #fff; }
+  .scheme-c .pipeline .arrow { color: #ccc; font-size: 12px; flex-shrink: 0; }
+
+  /* 方案说明 */
+  .pros-cons {
+    margin-top: 16px;
+    font-size: 12px;
+  }
+  .pros-cons h4 { font-size: 13px; margin-bottom: 6px; color: #333; }
+  .pros-cons ul { list-style: none; padding: 0; }
+  .pros-cons li { padding: 3px 0; color: #555; }
+  .pros-cons li::before { content: "+ "; color: #52c41a; font-weight: bold; }
+  .pros-cons li.con::before { content: "- "; color: #ff4d4f; }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">短剧剧本改编 Agent - 可视化方案对比</h1>
+<p class="page-subtitle">将小说.txt 拖入指定区域 -> 调用 Agent 流式输出 -> 编辑修改 -> 导出 txt</p>
+
+<div class="grid">
+
+  <!-- ======================== 方案 A: 极简工具风 ======================== -->
+  <div class="scheme scheme-a">
+    <div class="scheme-header">
+      <h2>方案 A: 极简工具风</h2>
+      <span class="tag">单页面</span>
+      <span class="tag">轻量</span>
+      <span class="tag">类 Notion</span>
+    </div>
+    <div class="scheme-body">
+      <!-- 拖拽区域 -->
+      <div class="drop-zone">
+        <div class="icon">📄</div>
+        拖拽小说 .txt 文件到此处<br>
+        <span style="font-size:12px;color:#bbb;">或点击选择文件</span>
+      </div>
+
+      <!-- 状态 + 进度 -->
+      <div class="status-text">正在生成第 3 集 / 共 60 集 ...</div>
+      <div class="progress-bar"><div class="fill" style="width:5%;"></div></div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="btn btn-primary" disabled>开始改编</button>
+        <button class="btn btn-outline">停止</button>
+        <button class="btn btn-success" disabled>导出 .txt</button>
+      </div>
+
+      <!-- 输出/编辑区域 -->
+      <div class="output-area editable" contenteditable="true">第一集
+
+1-1 日 内 贺家客厅
+
+△ 贺夫人坐在沙发上，神色焦急。
+
+贺夫人（焦急）：大小姐到底去了哪里？
+
+△ 门铃响起，保姆快步走去开门。
+
+【闪回】
+
+2-1 夜 外 雨夜街道
+
+△ 女主独自走在雨中，浑身湿透。</div>
+
+      <div class="pros-cons">
+        <h4>特点</h4>
+        <ul>
+          <li>单页面布局，上下结构，零学习成本</li>
+          <li>拖拽区 + 进度条 + 编辑区，一目了然</li>
+          <li>输出区直接可编辑，无需切换模式</li>
+          <li class="con">功能密集时页面可能较长</li>
+          <li class="con">缺少步骤引导感</li>
+        </ul>
+      </div>
+    </div>
+    <div class="scheme-footer">
+      适合偏好简洁工具的用户，类似 Typora / Notion 的即用即走体验。
+    </div>
+  </div>
+
+  <!-- ======================== 方案 B: 专业工作台 ======================== -->
+  <div class="scheme scheme-b">
+    <div class="scheme-header">
+      <h2>方案 B: 专业工作台</h2>
+      <span class="tag">分栏布局</span>
+      <span class="tag">步骤引导</span>
+      <span class="tag">类 VS Code</span>
+    </div>
+    <div class="scheme-body">
+      <!-- 左侧步骤栏 -->
+      <div class="sidebar">
+        <h4>工作流</h4>
+        <div class="step done">✓ 1. 上传小说</div>
+        <div class="step done">✓ 2. 分析大纲</div>
+        <div class="step active">→ 3. 生成剧本 (3/60)</div>
+        <div class="step">4. 编辑修改</div>
+        <div class="step">5. 导出成品</div>
+      </div>
+
+      <!-- 拖拽区域 -->
+      <div class="drop-zone">
+        <div class="icon">📂</div>
+        弃妇逆袭：贺家真千金.txt<br>
+        <span style="font-size:12px;">已加载 · 128,430 字</span>
+      </div>
+
+      <!-- 状态 + 进度 -->
+      <div class="status-text">批次 1/6 · 正在生成第 1-10 集 ...</div>
+      <div class="progress-bar"><div class="fill" style="width:16%;"></div></div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="btn btn-primary">▶ 开始</button>
+        <button class="btn btn-secondary">⏸ 暂停</button>
+        <button class="btn btn-outline">⚙ 设置</button>
+        <button class="btn btn-success" disabled>⬇ 导出</button>
+      </div>
+
+      <!-- 输出/编辑区域 -->
+      <div class="output-area editable" contenteditable="true">第一集
+
+1-1 日 内 贺家客厅
+
+△ 贺夫人坐在沙发上，神色焦急。
+
+贺夫人（焦急）：大小姐到底去了哪里？
+
+△ 门铃响起，保姆快步走去开门。
+
+【闪回】
+
+2-1 夜 外 雨夜街道
+
+△ 女主独自走在雨中，浑身湿透。</div>
+
+      <div class="pros-cons">
+        <h4>特点</h4>
+        <ul>
+          <li>左侧步骤导航，清晰展示当前进度</li>
+          <li>分栏布局，信息密度高，专业感强</li>
+          <li>支持暂停、设置等高级操作</li>
+          <li class="con">布局较复杂，对小屏不友好</li>
+          <li class="con">开发成本相对较高</li>
+        </ul>
+      </div>
+    </div>
+    <div class="scheme-footer">
+      适合需要精细控制流程的用户，类似 VS Code / 专业 IDE 的工作台体验。
+    </div>
+  </div>
+
+  <!-- ======================== 方案 C: 现代卡片流 ======================== -->
+  <div class="scheme scheme-c">
+    <div class="scheme-header">
+      <h2>方案 C: 现代卡片流</h2>
+      <span class="tag">卡片式</span>
+      <span class="tag">管道流程</span>
+      <span class="tag">类 ChatGPT</span>
+    </div>
+    <div class="scheme-body">
+      <!-- 管道步骤指示器 -->
+      <div class="pipeline">
+        <div class="dot done">1</div>
+        <span class="arrow">→</span>
+        <div class="dot done">2</div>
+        <span class="arrow">→</span>
+        <div class="dot active">3</div>
+        <span class="arrow">→</span>
+        <div class="dot">4</div>
+        <span class="arrow">→</span>
+        <div class="dot">5</div>
+      </div>
+
+      <!-- 拖拽区域 -->
+      <div class="drop-zone">
+        <div class="icon">✨</div>
+        拖入小说文件，开始你的改编之旅<br>
+        <span style="font-size:12px;color:#b8a9d4;">支持 .txt 格式</span>
+      </div>
+
+      <!-- 状态 + 进度 -->
+      <div class="status-text">AI 正在改编中... 已完成 5%</div>
+      <div class="progress-bar"><div class="fill" style="width:5%;"></div></div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="btn btn-primary" disabled>✨ 开始改编</button>
+        <button class="btn btn-success" disabled>📥 导出剧本</button>
+      </div>
+
+      <!-- 输出/编辑区域 -->
+      <div class="output-area editable" contenteditable="true">第一集
+
+1-1 日 内 贺家客厅
+
+△ 贺夫人坐在沙发上，神色焦急。
+
+贺夫人（焦急）：大小姐到底去了哪里？
+
+△ 门铃响起，保姆快步走去开门。
+
+【闪回】
+
+2-1 夜 外 雨夜街道
+
+△ 女主独自走在雨中，浑身湿透。</div>
+
+      <div class="pros-cons">
+        <h4>特点</h4>
+        <ul>
+          <li>卡片式设计，视觉层次清晰，现代感强</li>
+          <li>管道步骤指示器，流程感强</li>
+          <li>渐变色彩，品牌感突出</li>
+          <li class="con">视觉元素较多，可能分散注意力</li>
+          <li class="con">渐变和动画对性能有轻微影响</li>
+        </ul>
+      </div>
+    </div>
+    <div class="scheme-footer">
+      适合追求现代视觉体验的用户，类似 ChatGPT / 现代 SaaS 产品的交互风格。
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

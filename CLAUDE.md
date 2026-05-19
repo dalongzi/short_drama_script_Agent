@@ -29,6 +29,9 @@ python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data
 
 # 自定义批次大小
 python src/main.py --novel data/弃妇逆袭：贺家真千金.txt --output data/output.txt --auto-episodes --batch-size 15
+
+# 启动 Web UI 服务（浏览器访问 http://localhost:5000）
+.venv\Scripts\python.exe web\server.py
 ```
 
 ## 架构结构
@@ -42,32 +45,6 @@ src/
 ├── format_validator.py # 格式校验器（检查集数标题、场景编号、△标记等）
 └── main.py             # 主入口（argparse 命令行）
 ```
-
-### 核心工作流
-
-1. `config.py` 加载 API 配置 → 2. `novel_reader.py` 读取小说 → 3. `llm_client.py` 初始化客户端 → 4. `script_writer.py` 生成剧本 → 5. `format_validator.py` 校验格式
-
-### 两种生成模式
-
-- **固定集数模式**：`generate_script()` — 直接指定集数，一次性生成
-- **自动集数模式**：`generate_script_auto_episodes()` — 三阶段流程：
-  1. LLM 分析小说，决定总集数（60-100 集范围）
-  2. LLM 生成逐集大纲（每集核心剧情 + 结尾钩子 + 原文范围标注）
-  3. 按大纲分批生成正文：先将小说按章节分割，每集映射到对应片段，逐批调用 LLM 并写入文件
-
-### `script_writer.py` 关键抽象
-
-| 名称 | 说明 |
-|------|------|
-| `BatchRange` | `dataclass(frozen=True)`，封装单批集数范围 `{start, end}` |
-| `AutoPromptContext` | `dataclass(frozen=True)`，封装不变上下文：`template_content`、`total_episodes`、`outline_dict`、`novel_segments` |
-| `_build_auto_prompt(batch, outline_section, novel_segment, ctx)` | 构建正文生成提示词，只传当前批次数据（非全文） |
-| `_split_novel_by_chapters(novel_text)` | 按章节标题分割小说，无章节时回退按段落分割 |
-| `_map_episodes_to_segments(chapters, total_episodes)` | 将每集按比例映射到对应章节内容 |
-| `_parse_outline(outline_response)` | 从大纲文本中解析 `{集数: 大纲文本}` 映射 |
-| `_print_system_prompt(prompt)` | 统一打印系统提示词的辅助方法，避免重复 |
-| `_FORMAT_RULES` | 模块级常量，剧本格式规则（多处提示词共用） |
-| `_EPISODE_PATTERN` / `_EPISODE_COUNT_PATTERN` / `_CHAPTER_PATTERN` | 模块级正则常量，避免重复编译 |
 
 ## 关键约束
 
@@ -90,15 +67,6 @@ src/
 5. **格式严格**：输出剧本必须 100% 符合 `data/短剧剧本写作格式模板.md` 规范
 6. **新增方法需配套测试**：`script_writer.py` 每个 `_` 私有方法都应有对应测试用例
 
-## 配置说明
-
-通过 `.env` 文件或环境变量配置：
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `DASHSCOPE_API_KEY` / `OPENAI_API_KEY` | 无 | API 密钥 |
-| `OPENAI_BASE_URL` | `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` | 代理地址 |
-| `OPENAI_MODEL` | `qwen3.6-plus` | 模型名称 |
 
 ## 关键文档
 

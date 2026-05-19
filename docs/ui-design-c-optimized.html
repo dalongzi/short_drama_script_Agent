@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 C - UI 优化版</title>
+<style>
+/* ==================== CSS Variables (可调) ==================== */
+:root {
+  --primary-start: #667eea;
+  --primary-end: #764ba2;
+  --bg-color: #f5f7fa;
+  --card-bg: #ffffff;
+  --text-color: #1a1a2e;
+  --text-secondary: #6b7280;
+  --border-radius: 20px;
+  --card-shadow: 0 4px 24px rgba(102, 126, 234, 0.12);
+  --drop-zone-height: 60px;
+  --editor-min-height: 461px;
+  --font-size-base: 14px;
+  --font-size-editor: 14px;
+  --accent-color: #667eea;
+  --success-color: #10b981;
+}
+
+/* ==================== Reset & Base ==================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: var(--font-size-base);
+  min-height: 100vh;
+  transition: background 0.3s, font-size 0.2s;
+}
+
+/* ==================== Layout ==================== */
+.app-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 右侧面板 - 控制面板 */
+.control-panel {
+  width: 300px;
+  min-width: 260px;
+  max-width: 400px;
+  background: #fff;
+  border-left: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  box-shadow: -2px 0 12px rgba(0,0,0,0.04);
+  transition: width 0.3s;
+}
+.control-panel.collapsed { width: 0; min-width: 0; overflow: hidden; border: none; }
+
+.panel-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 10;
+}
+.panel-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel-section {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f5f5f5;
+}
+.panel-section:last-child { border-bottom: none; }
+.panel-section h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+/* 滑动条控制 */
+.slider-control {
+  margin-bottom: 16px;
+}
+.slider-control:last-child { margin-bottom: 0; }
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.slider-label span:first-child {
+  font-size: 13px;
+  font-weight: 500;
+}
+.slider-value {
+  font-size: 12px;
+  color: var(--accent-color);
+  font-weight: 600;
+  background: #f0f0ff;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* 颜色选择器 */
+.color-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.color-row label {
+  font-size: 13px;
+  flex: 1;
+}
+.color-row input[type="color"] {
+  width: 36px;
+  height: 28px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 2px;
+}
+
+/* 开关 */
+.switch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.switch-row label { font-size: 13px; }
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider-switch {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 22px;
+  transition: 0.3s;
+}
+.slider-switch::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+.switch input:checked + .slider-switch {
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+}
+.switch input:checked + .slider-switch::before {
+  transform: translateX(18px);
+}
+
+/* 提示词复制按钮 */
+.copy-prompt-section {
+  padding: 16px 20px;
+  background: #fafafe;
+  border-bottom: 1px solid #f0f0f0;
+}
+.copy-prompt-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.copy-prompt-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+.copy-prompt-btn:active { transform: scale(0.98); }
+.copy-prompt-btn.copied {
+  background: var(--success-color);
+}
+
+/* ==================== 主工作区 ==================== */
+.main-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+/* 顶栏 */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.top-bar .logo {
+  font-size: 16px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.top-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 面板切换按钮 */
+.toggle-panel-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+.toggle-panel-btn:hover { background: #f5f5f5; }
+
+/* 主内容区 */
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* ==================== 卡片通用 ==================== */
+.card {
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: var(--card-shadow);
+  padding: 24px;
+  margin-bottom: 20px;
+  transition: box-shadow 0.3s, background 0.3s;
+}
+.card:hover { box-shadow: 0 8px 32px rgba(102, 126, 234, 0.16); }
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ==================== 拖拽上传区 ==================== */
+.drop-zone {
+  border: 2px dashed #d1d5db;
+  border-radius: var(--border-radius);
+  padding: var(--drop-zone-height);
+  text-align: center;
+  color: var(--text-secondary);
+  transition: all 0.3s;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.drop-zone::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.drop-zone:hover::before, .drop-zone.drag-over::before {
+  opacity: 0.04;
+}
+.drop-zone .dz-content {
+  position: relative;
+  z-index: 1;
+}
+.drop-zone .dz-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+.drop-zone .dz-text {
+  font-size: 15px;
+  font-weight: 500;
+}
+.drop-zone .dz-hint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
+/* ==================== 进度条 ==================== */
+.progress-section {
+  margin-bottom: 20px;
+}
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.progress-status {
+  font-size: 13px;
+  font-weight: 500;
+}
+.progress-percent {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-color);
+}
+.progress-track {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-start), var(--primary-end));
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* ==================== 工具栏 ==================== */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+}
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+.btn-outline {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  color: var(--text-secondary);
+}
+.btn-success {
+  background: var(--success-color);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* ==================== 编辑器 ==================== */
+.editor-card .editor-toolbar {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 12px;
+}
+.editor-toolbar button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  color: var(--text-secondary);
+}
+.editor-toolbar button:hover { background: #f0f0f0; }
+
+.editor-area {
+  min-height: var(--editor-min-height);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", "Source Code Pro", monospace;
+  font-size: var(--font-size-editor);
+  line-height: 1.7;
+  color: var(--text-color);
+  outline: none;
+  border-radius: 6px;
+  transition: box-shadow 0.2s;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.editor-area:focus {
+  box-shadow: inset 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+/* ==================== 流式打字效果 ==================== */
+.streaming-cursor::after {
+  content: "▌";
+  animation: blink 0.8s infinite;
+  color: var(--accent-color);
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ==================== Toast 提示 ==================== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1a1a2e;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  z-index: 1000;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all 0.3s;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ==================== 响应式 ==================== */
+@media (max-width: 768px) {
+  .app-container { flex-direction: column; }
+  .control-panel { width: 100%; max-width: none; border-left: none; border-top: 1px solid #e5e7eb; max-height: 300px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- ==================== 主工作区 ==================== -->
+  <div class="main-workspace">
+    <!-- 顶栏 -->
+    <div class="top-bar">
+      <div class="logo">短剧剧本改编 Agent</div>
+      <div class="top-bar-actions">
+        <button class="toggle-panel-btn" onclick="togglePanel()" title="UI 设置面板">⚙</button>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="content-area">
+
+      <!-- 拖拽上传卡片 -->
+      <div class="card">
+        <div class="card-title">📂 上传小说</div>
+        <div class="drop-zone" id="dropZone">
+          <div class="dz-content">
+            <div class="dz-icon">✨</div>
+            <div class="dz-text">拖拽小说 .txt 文件到此处</div>
+            <div class="dz-hint">或点击选择文件 · 支持 UTF-8 编码</div>
+          </div>
+          <input type="file" id="fileInput" accept=".txt" style="display:none;">
+        </div>
+      </div>
+
+      <!-- 进度卡片 -->
+      <div class="card progress-section">
+        <div class="card-title">⚡ 生成进度</div>
+        <div class="progress-info">
+          <span class="progress-status" id="progressStatus">等待开始...</span>
+          <span class="progress-percent" id="progressPercent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="btn btn-primary" id="btnStart" onclick="startGeneration()">▶ 开始改编</button>
+        <button class="btn btn-outline" id="btnStop" onclick="stopGeneration()" disabled>⏹ 停止</button>
+        <button class="btn btn-success" id="btnExport" onclick="exportScript()" disabled>📥 导出 .txt</button>
+      </div>
+
+      <!-- 编辑器卡片 -->
+      <div class="card editor-card">
+        <div class="card-title">📝 剧本编辑</div>
+        <div class="editor-toolbar">
+          <button title="撤销" onclick="document.execCommand('undo')">↩</button>
+          <button title="重做" onclick="document.execCommand('redo')">↪</button>
+          <button title="加粗" onclick="document.execCommand('bold')"><b>B</b></button>
+          <button title="斜体" onclick="document.execCommand('italic')"><i>I</i></button>
+          <button title="清空" onclick="clearEditor()">🗑</button>
+        </div>
+        <div class="editor-area" id="editor" contenteditable="true" spellcheck="false">等待生成剧本...</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== 右侧控制面板 ==================== -->
+  <div class="control-panel" id="controlPanel">
+    <div class="panel-header">
+      <h3>🎛 UI 设置</h3>
+      <button class="toggle-panel-btn" onclick="togglePanel()" style="width:28px;height:28px;font-size:14px;">✕</button>
+    </div>
+
+    <!-- 尺寸调节 -->
+    <div class="panel-section">
+      <h4>尺寸调节</h4>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>圆角大小</span>
+          <span class="slider-value" id="radiusVal">20px</span>
+        </div>
+        <input type="range" min="0" max="24" value="20" oninput="updateCSSVar('--border-radius', this.value + 'px', 'radiusVal')">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>基础字号</span>
+          <span class="slider-value" id="fontSizeVal">14px</span>
+        </div>
+        <input type="range" min="12" max="18" value="14" oninput="updateCSSVar('--font-size-base', this.value + 'px', 'fontSizeVal')">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>编辑器字号</span>
+          <span class="slider-value" id="editorFontVal">14px</span>
+        </div>
+        <input type="range" min="10" max="18" value="14" oninput="updateCSSVar('--font-size-editor', this.value + 'px', 'editorFontVal')">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>拖拽区高度</span>
+          <span class="slider-value" id="dropZoneVal">60px</span>
+        </div>
+        <input type="range" min="60" max="200" value="60" oninput="updateCSSVar('--drop-zone-height', this.value + 'px', 'dropZoneVal')">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>编辑器最小高度</span>
+          <span class="slider-value" id="editorHeightVal">461px</span>
+        </div>
+        <input type="range" min="150" max="600" value="461" oninput="updateCSSVar('--editor-min-height', this.value + 'px', 'editorHeightVal')">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>卡片阴影</span>
+          <span class="slider-value" id="shadowVal">12%</span>
+        </div>
+        <input type="range" min="0" max="40" value="12" oninput="updateShadow(this.value)">
+      </div>
+
+      <div class="slider-control">
+        <div class="slider-label">
+          <span>面板宽度</span>
+          <span class="slider-value" id="panelWidthVal">300px</span>
+        </div>
+        <input type="range" min="220" max="400" value="300" oninput="updatePanelWidth(this.value)">
+      </div>
+    </div>
+
+    <!-- 颜色调节 -->
+    <div class="panel-section">
+      <h4>主题颜色</h4>
+
+      <div class="color-row">
+        <label>主色渐变起点</label>
+        <input type="color" value="#667eea" oninput="updateCSSVar('--primary-start', this.value)">
+      </div>
+      <div class="color-row">
+        <label>主色渐变终点</label>
+        <input type="color" value="#764ba2" oninput="updateCSSVar('--primary-end', this.value)">
+      </div>
+      <div class="color-row">
+        <label>背景色</label>
+        <input type="color" value="#f5f7fa" oninput="updateCSSVar('--bg-color', this.value)">
+      </div>
+      <div class="color-row">
+        <label>卡片背景</label>
+        <input type="color" value="#ffffff" oninput="updateCSSVar('--card-bg', this.value)">
+      </div>
+      <div class="color-row">
+        <label>强调色</label>
+        <input type="color" value="#667eea" oninput="updateCSSVar('--accent-color', this.value)">
+      </div>
+      <div class="color-row">
+        <label>成功色</label>
+        <input type="color" value="#10b981" oninput="updateCSSVar('--success-color', this.value)">
+      </div>
+    </div>
+
+    <!-- 开关 -->
+    <div class="panel-section">
+      <h4>显示选项</h4>
+
+      <div class="switch-row">
+        <label>显示编辑器工具栏</label>
+        <label class="switch">
+          <input type="checkbox" checked onchange="document.querySelector('.editor-toolbar').style.display = this.checked ? 'flex' : 'none'">
+          <span class="slider-switch"></span>
+        </label>
+      </div>
+
+      <div class="switch-row">
+        <label>卡片悬浮动画</label>
+        <label class="switch">
+          <input type="checkbox" checked id="cardHoverToggle">
+          <span class="slider-switch"></span>
+        </label>
+      </div>
+
+      <div class="switch-row">
+        <label>流式光标闪烁</label>
+        <label class="switch">
+          <input type="checkbox" checked onchange="document.getElementById('editor').classList.toggle('streaming-cursor', this.checked)">
+          <span class="slider-switch"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 提示词复制 -->
+    <div class="copy-prompt-section">
+      <button class="copy-prompt-btn" id="copyPromptBtn" onclick="copyPrompt()">
+        📋 复制 UI 调整提示词
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast 提示 -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ==================== CSS 变量更新 ====================
+function updateCSSVar(name, value, valId) {
+  document.documentElement.style.setProperty(name, value);
+  if (valId) document.getElementById(valId).textContent = value;
+}
+
+function updateShadow(val) {
+  document.getElementById('shadowVal').textContent = val + '%';
+  const v = val / 100;
+  document.documentElement.style.setProperty('--card-shadow',
+    `0 4px 24px rgba(102, 126, 234, ${v})`);
+}
+
+function updatePanelWidth(val) {
+  document.getElementById('panelWidthVal').textContent = val + 'px';
+  document.getElementById('controlPanel').style.width = val + 'px';
+}
+
+// ==================== 面板切换 ====================
+function togglePanel() {
+  document.getElementById('controlPanel').classList.toggle('collapsed');
+}
+
+// ==================== Toast ====================
+function showToast(msg, duration = 2000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ==================== 文件拖拽 ====================
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.txt')) handleFile(file);
+  else showToast('请上传 .txt 文件');
+});
+fileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+function handleFile(file) {
+  dropZone.classList.add('has-file');
+  dropZone.querySelector('.dz-content').innerHTML = `
+    <div class="dz-icon">✓</div>
+    <div class="dz-text">${file.name}</div>
+    <div class="dz-hint">${(file.size / 1024).toFixed(1)} KB · 已加载</div>
+  `;
+  document.getElementById('btnStart').disabled = false;
+  showToast('文件已加载: ' + file.name);
+}
+
+// ==================== 模拟流式生成 ====================
+let generating = false;
+let genInterval = null;
+
+const sampleScript = `第一集
+
+1-1 日 内 贺家客厅
+
+△ 贺夫人坐在沙发上，神色焦急。茶几上放着一张泛黄的照片。
+
+贺夫人（焦急）：大小姐到底去了哪里？这都三天了！
+
+△ 门铃响起，保姆快步走去开门。
+
+保姆：夫人，有人找您！
+
+△ 门口站着一个浑身湿透的年轻女子，正是失踪三天的大小姐贺晚。
+
+贺晚（冷笑）：我回来了。不过，我不是一个人回来的。
+
+△ 贺晚侧身，身后跟着一个高大的男人。
+
+【闪回】
+
+2-1 夜 外 雨夜街道
+
+△ 贺晚独自走在雨中，手里紧紧攥着一份DNA鉴定报告。
+
+贺晚（OS）：原来这么多年，我才是那个被调换的真千金。
+
+【闪出】
+
+3-1 日 内 贺家客厅
+
+△ 贺夫人脸色瞬间苍白。
+
+贺夫人（颤抖）：你......你是谁？
+
+贺晚：我是谁不重要。重要的是，你们贺家欠我的，该还了。`;
+
+function startGeneration() {
+  if (generating) return;
+  generating = true;
+
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  const btnExport = document.getElementById('btnExport');
+  const editor = document.getElementById('editor');
+  const status = document.getElementById('progressStatus');
+  const percent = document.getElementById('progressPercent');
+  const fill = document.getElementById('progressFill');
+
+  btnStart.disabled = true;
+  btnStop.disabled = false;
+  btnExport.disabled = true;
+  editor.textContent = '';
+  editor.classList.add('streaming-cursor');
+
+
+  let i = 0;
+  const speed = 30;
+  genInterval = setInterval(() => {
+    if (i < sampleScript.length) {
+      editor.textContent += sampleScript[i];
+      i++;
+      const p = Math.min(100, Math.floor((i / sampleScript.length) * 100));
+      fill.style.width = p + '%';
+      percent.textContent = p + '%';
+      status.textContent = `正在生成... ${i}/${sampleScript.length} 字符`;
+      editor.scrollTop = editor.scrollHeight;
+    } else {
+      clearInterval(genInterval);
+      generating = false;
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+      btnExport.disabled = false;
+      editor.classList.remove('streaming-cursor');
+      status.textContent = '生成完成！';
+      showToast('剧本生成完成！可以编辑后导出。');
+    }
+  }, speed);
+}
+
+function stopGeneration() {
+  if (!generating) return;
+  clearInterval(genInterval);
+  generating = false;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
+  document.getElementById('editor').classList.remove('streaming-cursor');
+  document.getElementById('progressStatus').textContent = '已停止';
+  showToast('生成已停止');
+}
+
+// ==================== 导出 ====================
+function exportScript() {
+  const content = document.getElementById('editor').textContent;
+  if (!content || content === '等待生成剧本...') {
+    showToast('没有可导出的内容');
+    return;
+  }
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '短剧剧本.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('剧本已导出！');
+}
+
+// ==================== 清空编辑器 ====================
+function clearEditor() {
+  document.getElementById('editor').textContent = '';
+}
+
+// ==================== 提示词复制 ====================
+function copyPrompt() {
+  const root = getComputedStyle(document.documentElement);
+  const vars = {
+    'border-radius': root.getPropertyValue('--border-radius').trim(),
+    'font-size-base': root.getPropertyValue('--font-size-base').trim(),
+    'font-size-editor': root.getPropertyValue('--font-size-editor').trim(),
+    'drop-zone-height': root.getPropertyValue('--drop-zone-height').trim(),
+    'editor-min-height': root.getPropertyValue('--editor-min-height').trim(),
+    'primary-start': root.getPropertyValue('--primary-start').trim(),
+    'primary-end': root.getPropertyValue('--primary-end').trim(),
+    'bg-color': root.getPropertyValue('--bg-color').trim(),
+    'card-bg': root.getPropertyValue('--card-bg').trim(),
+    'accent-color': root.getPropertyValue('--accent-color').trim(),
+    'success-color': root.getPropertyValue('--success-color').trim(),
+  };
+
+  const prompt = `请帮我调整短剧剧本改编页面的 UI，具体参数如下：
+- 圆角大小: ${vars['border-radius']}
+- 基础字号: ${vars['font-size-base']}
+- 编辑器字号: ${vars['font-size-editor']}
+- 拖拽区高度: ${vars['drop-zone-height']}
+- 编辑器最小高度: ${vars['editor-min-height']}
+- 主色渐变起点: ${vars['primary-start']}
+- 主色渐变终点: ${vars['primary-end']}
+- 背景色: ${vars['bg-color']}
+- 卡片背景: ${vars['card-bg']}
+- 强调色: ${vars['accent-color']}
+- 成功色: ${vars['success-color']}
+
+请在方案 C 的基础上应用这些 UI 调整。`;
+
+  navigator.clipboard.writeText(prompt).then(() => {
+    const btn = document.getElementById('copyPromptBtn');
+    btn.classList.add('copied');
+    btn.textContent = '✓ 已复制到剪贴板';
+    showToast('提示词已复制！粘贴给 AI 即可应用调整。');
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = '📋 复制 UI 调整提示词';
+    }, 3000);
+  }).catch(() => {
+    // 降级方案：选中 textarea
+    const ta = document.createElement('textarea');
+    ta.value = prompt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('提示词已复制（降级方式）');
+  });
+}
+
+// 初始化按钮状态
+document.getElementById('btnStart').disabled = true;
+</script>
+</body>
+</html>

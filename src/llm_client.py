@@ -31,7 +31,7 @@ class LLMClient:
             base_url=base_url
         )
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str) -> tuple:
         """
         调用 LLM 生成文本
 
@@ -40,7 +40,7 @@ class LLMClient:
             user_prompt: 用户提示词
 
         Returns:
-            生成的文本内容
+            (生成的文本内容, usage 字典含 prompt_tokens/completion_tokens/total_tokens)
 
         Raises:
             LLMCallError: LLM 调用失败时抛出
@@ -53,7 +53,52 @@ class LLMClient:
                     {"role": "user", "content": user_prompt}
                 ]
             )
-            return response.choices[0].message.content
+            usage = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens,
+            }
+            return response.choices[0].message.content, usage
         except Exception as e:
             raise LLMCallError(f"LLM 调用失败: {str(e)}") from e
+
+    def generate_stream(self, system_prompt: str, user_prompt: str):
+        """
+        流式调用 LLM 生成文本，逐 token 返回
+
+        Args:
+            system_prompt: 系统提示词
+            user_prompt: 用户提示词
+
+        Yields:
+            对于普通 chunk，yield ('token', token_text)
+            对于最后一个含 usage 的 chunk，yield ('usage', usage_dict)
+
+        Raises:
+            LLMCallError: LLM 调用失败时抛出
+        """
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            for chunk in response:
+                if chunk.usage:
+                    usage = {
+                        'prompt_tokens': chunk.usage.prompt_tokens,
+                        'completion_tokens': chunk.usage.completion_tokens,
+                        'total_tokens': chunk.usage.total_tokens,
+                    }
+                    yield ('usage', usage)
+                elif chunk.choices and chunk.choices[0].delta:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        yield ('token', delta.content)
+        except Exception as e:
+            raise LLMCallError(f"LLM 流式调用失败: {str(e)}") from e
 

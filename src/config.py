@@ -19,7 +19,7 @@ class Config:
         """
         load_dotenv(override=False)
 
-        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key or os.getenv("TOKEN_API_KEY")
         self.base_url = base_url or os.getenv(
             "OPENAI_BASE_URL",
             "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"

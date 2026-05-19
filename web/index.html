@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>短剧剧本改编 Agent</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- ==================== 主工作区 ==================== -->
+  <div class="main-workspace">
+    <!-- 顶栏 -->
+    <div class="top-bar">
+      <div class="logo">短剧剧本改编 Agent</div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="content-area">
+
+      <!-- 拖拽上传卡片 -->
+      <div class="card">
+        <div class="card-title">&#128193; 上传小说</div>
+        <div class="drop-zone" id="dropZone">
+          <div class="dz-content">
+            <div class="dz-icon">&#10024;</div>
+            <div class="dz-text">拖拽小说 .txt 文件到此处</div>
+            <div class="dz-hint">或点击选择文件 &#183; 支持 UTF-8 编码</div>
+          </div>
+          <input type="file" id="fileInput" accept=".txt" style="display:none;">
+        </div>
+      </div>
+
+      <!-- 进度卡片 -->
+      <div class="card progress-section">
+        <div class="card-title">&#9889; 生成进度</div>
+        <div class="progress-info">
+          <span class="progress-status" id="progressStatus">等待开始...</span>
+          <span class="progress-percent" id="progressPercent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+        </div>
+        <div class="token-stats" id="tokenStats">
+          <span class="token-item">输入: <b id="tokenPrompt">0</b></span>
+          <span class="token-item">输出: <b id="tokenCompletion">0</b></span>
+          <span class="token-item">总计: <b id="tokenTotal">0</b></span>
+        </div>
+      </div>
+
+      <!-- LLM 调用详情 -->
+      <div class="card llm-trace-section">
+        <div class="card-title">&#129302; LLM 调用详情</div>
+        <div id="llmTraceList" class="trace-list"></div>
+      </div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <button class="btn btn-primary" id="btnStart" onclick="startGeneration()" disabled>&#9654; 开始改编</button>
+        <button class="btn btn-outline" id="btnStop" onclick="stopGeneration()" disabled>&#9209; 停止</button>
+        <button class="btn btn-success" id="btnExport" onclick="exportScript()" disabled>&#128229; 导出 .txt</button>
+      </div>
+
+      <!-- 编辑器卡片 -->
+      <div class="card editor-card">
+        <div class="card-title">&#128221; 剧本编辑</div>
+        <div class="editor-toolbar">
+          <button title="撤销" onclick="document.execCommand('undo')">&#8617;</button>
+          <button title="重做" onclick="document.execCommand('redo')">&#8618;</button>
+          <button title="加粗" onclick="document.execCommand('bold')"><b>B</b></button>
+          <button title="斜体" onclick="document.execCommand('italic')"><i>I</i></button>
+          <button title="清空" onclick="clearEditor()">&#128465;</button>
+        </div>
+        <div class="editor-area" id="editor" contenteditable="true" spellcheck="false">等待生成剧本...</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast 提示 -->
+<div class="toast" id="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

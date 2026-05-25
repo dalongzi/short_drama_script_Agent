@@ -92,8 +92,10 @@ function startGeneration() {
     .then(function(data) {
       status.textContent = '正在生成剧本...';
 
-      // 建立 SSE 连接
-      eventSource = new EventSource('/generate/' + data.file_id);
+      // 建立 SSE 连接，传递集数配置参数
+      var minEp = document.getElementById('minEpisodes').value;
+      var maxEp = document.getElementById('maxEpisodes').value;
+      eventSource = new EventSource('/generate/' + data.file_id + '?min_episodes=' + minEp + '&max_episodes=' + maxEp);
 
       eventSource.onmessage = function(e) {
         var msg = JSON.parse(e.data);

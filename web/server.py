@@ -19,6 +19,7 @@ sys.path.insert(0, ROOT_DIR)
 from src.config import Config
 from src.llm_client import LLMClient
 from src.script_writer import ScriptWriter, ScriptGenerationError, BatchRange, AutoPromptContext
+from src.format_validator import validate_script_format
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
@@ -84,6 +85,10 @@ def generate_script(file_id):
     if file_id not in uploaded_files:
         return jsonify({'error': '文件不存在'}), 404
 
+    # 接收集数配置参数（查询参数），默认与 main.py 一致
+    min_episodes = int(request.args.get('min_episodes', 40))
+    max_episodes = int(request.args.get('max_episodes', 110))
+
     def event_stream():
         novel_text = uploaded_files[file_id]
         state = generation_state[file_id]
@@ -122,7 +127,7 @@ def generate_script(file_id):
             novel_lines = novel_text.split('\n')
             novel_lines_count = len(novel_lines)
 
-            sys_s1, usr_s1 = script_writer._build_combined_prompt(novel_text, novel_lines_count, 60, 100)
+            sys_s1, usr_s1 = script_writer._build_combined_prompt(novel_text, novel_lines_count, min_episodes, max_episodes)
             stage1_resp, usage_s1 = llm_client.generate(sys_s1, usr_s1)
             total_tokens['prompt_tokens'] += usage_s1['prompt_tokens']
             total_tokens['completion_tokens'] += usage_s1['completion_tokens']
@@ -141,7 +146,7 @@ def generate_script(file_id):
             if stage_one is None:
                 raise ScriptGenerationError("阶段一 JSON 解析失败")
 
-            validation_error = ScriptWriter._validate_outlines(stage_one, 60, 100, novel_lines_count)
+            validation_error = ScriptWriter._validate_outlines(stage_one, min_episodes, max_episodes, novel_lines_count)
             if validation_error is not None:
                 raise ScriptGenerationError(f"阶段一大纲验证失败: {validation_error}")
 
@@ -177,7 +182,6 @@ def generate_script(file_id):
                 batch_outlines = [o for o in outlines if batch_range.start <= o.episode <= batch_range.end]
                 pre_text, main_text, post_text = ScriptWriter._extract_batch_text(novel_lines, outlines, batch_range)
 
-                from src.script_writer import AutoPromptContext
                 ctx = AutoPromptContext(
                     template_content=template_content,
                     total_episodes=total_episodes,
@@ -213,7 +217,6 @@ def generate_script(file_id):
                 })
 
                 # 校验格式
-                from src.format_validator import validate_script_format
                 is_valid, issues = validate_script_format(batch_content, os.path.join(ROOT_DIR, 'data', '短剧剧本写作格式模板.md'))
                 if not is_valid:
                     batch_content += '\n\n【格式校验问题】\n' + '\n'.join(issues)
